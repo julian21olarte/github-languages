@@ -29,7 +29,6 @@ public class GithubClient {
             e.printStackTrace();
         }
         this.token = props.get("github.token").toString();
-
         // languages
         this.languages = Arrays.asList(
                 "Java",
