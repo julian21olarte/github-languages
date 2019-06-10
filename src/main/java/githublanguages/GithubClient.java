@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
@@ -83,16 +84,24 @@ public class GithubClient {
 
     public List<Language> getLanguagesRepos() throws URISyntaxException, ExecutionException, InterruptedException {
         List<Language> languagesData = new ArrayList<>();
-        String date = getDateFormat();
-        URIBuilder githubUrl = new URIBuilder(url);
+        String date = Util.getDateFormat();
 
         // iterating languages and save the completables
-        List<CompletableFuture<Language>> futures = this.languages
+        List<CompletableFuture<Language>> futures = Collections.synchronizedList(this.languages)
         .stream()
         .map(lang -> {
             return CompletableFuture
-                .supplyAsync(() -> githubUrl.setParameter("q", this.getGithubQuery(lang, date)))
+                .supplyAsync(() -> {
+                    System.out.println(this.getGithubQuery(lang, date));
+                    try {
+                        return new URIBuilder(url).setParameter("q", this.getGithubQuery(lang, date));
+                    } catch (URISyntaxException e) {
+                        e.printStackTrace();
+                    }
+                    return null;
+                })
                 .thenApply(uriBuilder -> {
+                    System.out.println(uriBuilder.toString());
                     try {
                         return this.getLanguageFromQuery(lang, uriBuilder);
                     } catch (IOException e) {
@@ -106,17 +115,11 @@ public class GithubClient {
                 });
         }).collect(Collectors.toList());
 
-        // wating for the completables and stored it
-        for(CompletableFuture<Language> future: futures) {
-            languagesData.add(future.get());
-        }
+        // waiting for the completables and stored it
+        languagesData = futures.stream()
+            .map(CompletableFuture::join)
+            .collect(Collectors.toList());
         return languagesData;
-    }
-
-    private String getDateFormat() {
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("YYYY-MM-dd");
-        LocalDate localDate = LocalDate.now().minusDays(1);
-        return dtf.format(localDate);
     }
 
     private String getGithubQuery(String lang, String date) {
